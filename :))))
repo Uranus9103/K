@@ -820,4 +820,5 @@ game.StarterGui:SetCore(
         Title = "Full Light ",
         Text = "Loading...",
         Duration = 3
+end
 })
