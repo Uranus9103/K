@@ -15,9 +15,9 @@ loadstring(game:HttpGet(("https://raw.githubusercontent.com/VanThanhIOS/OniiChan
         Keys = {"Free_04847271374758392385CATHUB"},
         Notifi = {
         Notifications = true,
-        CorrectKey = "Đang Chạy Kịch Bản",
-       Incorrectkey = "Mật Khẩu Không Đúng",
-       CopyKeyLink = "Đã Sao Chép"
+        CorrectKey = "Đang tải chờ tí:)",
+       Incorrectkey = "MK sai r",
+       CopyKeyLink = "Đã sao chép r"
       }
     }
   })
