@@ -1,0 +1,122 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+
+-- Tạo RemoteEvent
+local remote = ReplicatedStorage:FindFirstChild("TpRemote") or Instance.new("RemoteEvent")
+remote.Name = "TpRemote"
+remote.Parent = ReplicatedStorage
+
+-- Tạo DataStore lưu vị trí nút
+local posStore = DataStoreService:GetDataStore("TeleportButtonPos")
+
+-- ==================== CLIENT ====================
+if script.RunContext == Enum.RunContext.Client then
+	local player = Players.LocalPlayer
+	local teleportEnabled = false
+
+	-- Tạo GUI
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "TeleportGUI"
+	gui.Parent = player:WaitForChild("PlayerGui")
+
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(0,120,0,40)
+	button.Position = UDim2.new(0.1,0,0.2,0)
+	button.Text = "Teleport: OFF"
+	button.BackgroundColor3 = Color3.fromRGB(200,50,50)
+	button.TextColor3 = Color3.fromRGB(255,255,255)
+	button.Parent = gui
+	button.Active = true
+	button.Draggable = true
+
+	-- Tải vị trí nút từ server
+	ReplicatedStorage:WaitForChild("TpRemote"):FireServer("LoadButtonPos")
+
+	-- Nhận vị trí từ server
+	ReplicatedStorage:WaitForChild("TpRemote").OnClientEvent:Connect(function(cmd, posX, posY)
+		if cmd == "SetButtonPos" then
+			button.Position = UDim2.new(posX,0,posY,0)
+		end
+	end)
+
+	-- Lưu vị trí khi kéo xong
+	local dragging = false
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+		end
+	end)
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = false
+			-- gửi vị trí mới về server để lưu
+			remote:FireServer("SaveButtonPos", button.Position.X.Scale, button.Position.Y.Scale)
+		end
+	end)
+
+	-- Bật/tắt teleport
+	button.MouseButton1Click:Connect(function()
+		teleportEnabled = not teleportEnabled
+		if teleportEnabled then
+			button.Text = "Teleport: ON"
+			button.BackgroundColor3 = Color3.fromRGB(50,200,50)
+		else
+			button.Text = "Teleport: OFF"
+			button.BackgroundColor3 = Color3.fromRGB(200,50,50)
+		end
+	end)
+
+	-- Nghe chat để teleport
+	player.Chatted:Connect(function(msg)
+		if teleportEnabled and string.sub(msg,1,4) == "/tp_" then
+			local targetName = string.sub(msg,5)
+			if targetName and targetName ~= "" then
+				remote:FireServer("Teleport", targetName, tick())
+			end
+		end
+	end)
+end
+
+-- ==================== SERVER ====================
+if script.RunContext == Enum.RunContext.Server then
+	remote.OnServerEvent:Connect(function(sender, action, a, b)
+		-- Teleport
+		if action == "Teleport" then
+			local targetName, uniqueKey = a, b
+			local targetPlayer = nil
+			for _, plr in pairs(Players:GetPlayers()) do
+				if string.lower(plr.Name) == string.lower(targetName) then
+					targetPlayer = plr
+					break
+				end
+			end
+
+			if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+				if sender.Character and sender.Character:FindFirstChild("HumanoidRootPart") then
+					sender.Character.HumanoidRootPart.CFrame =
+						targetPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(2,0,0)
+				end
+			end
+		end
+
+		-- Lưu vị trí nút
+		if action == "SaveButtonPos" then
+			local posX, posY = a, b
+			local key = "Btn_"..sender.UserId
+			posStore:SetAsync(key, {X = posX, Y = posY})
+		end
+
+		-- Load vị trí nút
+		if action == "LoadButtonPos" then
+			local key = "Btn_"..sender.UserId
+			local data
+			pcall(function()
+				data = posStore:GetAsync(key)
+			end)
+			if data then
+				remote:FireClient(sender, "SetButtonPos", data.X, data.Y)
+			end
+		end
+	end)
+end
