@@ -1,0 +1,143 @@
+-- 📌 Ban System (all-in-one)
+-- Đặt script này trong StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local BanStore = DataStoreService:GetDataStore("BanData")
+
+local player = Players.LocalPlayer
+
+-- UI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "BanSystemGUI"
+screenGui.Parent = player:WaitForChild("PlayerGui")
+screenGui.ResetOnSpawn = false
+
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 120, 0, 40)
+button.Position = UDim2.new(0.05, 0, 0.2, 0)
+button.Text = "Ban: OFF"
+button.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.Parent = screenGui
+button.Active = true
+button.Draggable = true
+
+local enabled = false
+
+button.MouseButton1Click:Connect(function()
+	enabled = not enabled
+	if enabled then
+		button.Text = "Ban: ON"
+		button.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+	else
+		button.Text = "Ban: OFF"
+		button.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	end
+end)
+
+-- RemoteEvent để gửi lệnh từ client -> server
+local remote = Instance.new("RemoteEvent")
+remote.Name = "BanRemote"
+remote.Parent = game.ReplicatedStorage
+
+-- Khi gõ lệnh
+player.Chatted:Connect(function(msg)
+	if not enabled then return end
+	
+	if string.sub(msg,1,5) == "/ban_" then
+		local args = string.split(string.sub(msg,6), " ")
+		local targetName = args[1]
+		local duration = args[2] or "permanent"
+		if targetName then
+			remote:FireServer("ban", targetName, duration)
+		end
+	elseif string.sub(msg,1,7) == "/unban_" then
+		local targetName = string.sub(msg,8)
+		if targetName and targetName ~= "" then
+			remote:FireServer("unban", targetName)
+		end
+	end
+end)
+
+-- ================================
+-- SERVER PHẦN (gộp trong LocalScript bằng cách check RunContext)
+-- ================================
+if script.RunContext == Enum.RunContext.Server then
+	local function banPlayer(playerName, duration, banner)
+		local key = "Ban_"..playerName
+		local expireTime = 0
+		
+		if duration == "permanent" then
+			expireTime = math.huge
+		else
+			local minutes = tonumber(duration)
+			if minutes then
+				expireTime = os.time() + (minutes * 60)
+			else
+				return false, "Invalid time format!"
+			end
+		end
+		
+		local success, err = pcall(function()
+			BanStore:SetAsync(key, {Expire = expireTime, By = banner})
+		end)
+		
+		if success then
+			local target = Players:FindFirstChild(playerName)
+			if target then
+				if expireTime == math.huge then
+					target:Kick("You have been permanently banned by "..banner)
+				else
+					target:Kick("You have been banned for "..duration.." minutes by "..banner)
+				end
+			end
+			return true
+		else
+			warn("Error saving ban: "..err)
+			return false
+		end
+	end
+
+	local function unbanPlayer(playerName)
+		local key = "Ban_"..playerName
+		local success, err = pcall(function()
+			BanStore:RemoveAsync(key)
+		end)
+		if success then
+			return true
+		else
+			warn("Error unbanning: "..err)
+			return false
+		end
+	end
+
+	-- Kiểm tra khi player join
+	Players.PlayerAdded:Connect(function(p)
+		local key = "Ban_"..p.Name
+		local data
+		local success, err = pcall(function()
+			data = BanStore:GetAsync(key)
+		end)
+		
+		if success and data then
+			if data.Expire == math.huge then
+				p:Kick("You are permanently banned by "..(data.By or "Admin"))
+			elseif os.time() < data.Expire then
+				local remaining = math.floor((data.Expire - os.time())/60)
+				p:Kick("You are banned. Remaining: "..remaining.." minutes.")
+			else
+				BanStore:RemoveAsync(key)
+			end
+		end
+	end)
+
+	-- Xử lý remote
+	remote.OnServerEvent:Connect(function(sender, action, targetName, duration)
+		if action == "ban" then
+			banPlayer(targetName, duration, sender.Name)
+		elseif action == "unban" then
+			unbanPlayer(targetName)
+		end
+	end)
+end
