@@ -1,0 +1,89 @@
+-- DupePets.lua
+-- Script duy nhất, vừa Server vừa Client
+
+--=== SERVER XỬ LÝ DATASTORE ===--
+if game:GetService("RunService"):IsServer() then
+	local DataStoreService = game:GetService("DataStoreService")
+	local PetsStore = DataStoreService:GetDataStore("PlayerPets")
+
+	-- Hàm lưu
+	local function savePets(player)
+		local pets = {}
+		for _,pet in ipairs(player:WaitForChild("Pets"):GetChildren()) do
+			table.insert(pets, pet.Name)
+		end
+		local success, err = pcall(function()
+			PetsStore:SetAsync(player.UserId.."_pets", pets)
+		end)
+		if not success then
+			warn("Lưu pet lỗi:", err)
+		end
+	end
+
+	-- Hàm load
+	local function loadPets(player)
+		local pets = {}
+		local success, data = pcall(function()
+			return PetsStore:GetAsync(player.UserId.."_pets")
+		end)
+		if success and data then
+			pets = data
+		end
+		return pets
+	end
+
+	-- Khi player vào
+	game.Players.PlayerAdded:Connect(function(player)
+		local petsFolder = Instance.new("Folder")
+		petsFolder.Name = "Pets"
+		petsFolder.Parent = player
+
+		local pets = loadPets(player)
+		for _,petName in ipairs(pets) do
+			local pet = Instance.new("StringValue")
+			pet.Name = petName
+			pet.Parent = petsFolder
+		end
+	end)
+
+	-- Khi player out
+	game.Players.PlayerRemoving:Connect(function(player)
+		savePets(player)
+	end)
+
+	-- RemoteEvent dupe
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local dupeEvent = Instance.new("RemoteEvent")
+	dupeEvent.Name = "DupePetsEvent"
+	dupeEvent.Parent = ReplicatedStorage
+
+	dupeEvent.OnServerEvent:Connect(function(player)
+		local petsFolder = player:WaitForChild("Pets")
+		local currentPets = petsFolder:GetChildren()
+		for _,pet in ipairs(currentPets) do
+			local clone = pet:Clone()
+			clone.Parent = petsFolder
+		end
+		savePets(player)
+	end)
+end
+
+--=== CLIENT HIỂN THỊ NÚT ===--
+if game:GetService("RunService"):IsClient() then
+	local player = game.Players.LocalPlayer
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "PetGui"
+	screenGui.Parent = player:WaitForChild("PlayerGui")
+
+	local dupeBtn = Instance.new("TextButton")
+	dupeBtn.Size = UDim2.new(0,200,0,50)
+	dupeBtn.Position = UDim2.new(0.5,-100,0.8,0)
+	dupeBtn.Text = "✨ Dupe Pets"
+	dupeBtn.Parent = screenGui
+
+	dupeBtn.MouseButton1Click:Connect(function()
+		ReplicatedStorage:WaitForChild("DupePetsEvent"):FireServer()
+	end)
+end
